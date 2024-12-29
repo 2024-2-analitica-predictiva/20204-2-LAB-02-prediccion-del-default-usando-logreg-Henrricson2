@@ -80,6 +80,7 @@
 # Guardelas en el archivo files/output/metrics.json. Cada fila
 # del archivo es un diccionario con las metricas de un modelo.
 # Este diccionario tiene un campo para indicar si es el conjunto
+
 # de entrenamiento o prueba. Por ejemplo:
 #
 # {'type': 'metrics', 'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
@@ -95,3 +96,78 @@
 # {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
 # {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
 #
+
+
+def main():
+    from sklearn.linear_model import LogisticRegression
+    import funtions
+    from sklearn.metrics import balanced_accuracy_score
+    # Paso 1: Cargar los datos
+
+    data_test= funtions.load_data("files/input/test_data.csv.zip")
+    data_train= funtions.load_data("files/input/train_data.csv.zip")
+    # Paso 2: Limpiar los datos
+    data_test = funtions.clean_data(data_test)
+    data_train = funtions.clean_data(data_train)
+    # paso 3: dividir los datos 
+    x_test=data_test.drop("default", axis=1)
+    y_test=data_test[["default"]]
+    x_train=data_train.drop("default", axis=1)
+    y_train=data_train[["default"]]
+
+    pipeline = funtions.make_pipeline(
+        estimator=LogisticRegression(n_jobs=-1, random_state=666,class_weight=None))
+    pipeline
+    # Paso 5: Definir los hiperparámetros para la búsqueda en cuadrícula
+
+    param_grid = {
+        #'estimator__penalty': ['l1', 'l2'],  # Aquí agregamos el nombre del paso 'estimator__' 
+        'estimator__C': [1],
+        'estimator__solver': ['lbfgs'],
+        #'estimator__max_iter': [100, 200],
+    }
+
+
+    # Paso 6: Crear el objeto GridSearchCV
+
+    estimator = funtions.make_grid_search(estimator=pipeline, param_grid=param_grid, cv=10)
+
+    # Paso 7: Ajustar el modelo a los datos de entrenamiento
+    estimator.fit(x_train, y_train)
+
+    # Paso 8: Obtener el mejor estimador
+    best_estimator = funtions.load_estimator_compressed("files/models/model.pkl.gz")
+
+    if best_estimator is not None:
+
+        saved_balanced_accuracy = balanced_accuracy_score(
+            y_true=y_test, y_pred=best_estimator.predict(x_test)
+        )
+
+        current_balanced_accuracy = balanced_accuracy_score(
+            y_true=y_test, y_pred=estimator.predict(x_test)
+        )
+
+        if current_balanced_accuracy < saved_balanced_accuracy:
+            estimator = best_estimator
+
+    funtions.save_estimator_compressed(estimator,"files/models/model.pkl.gz")
+
+    # Ejecutar cálculo de métricas y matrices
+    funtions.calculate_and_save_metrics(estimator, x_train, x_test, y_train, y_test,"files/output/metrics.json")
+    funtions.calculate_and_save_confusion_matrices(estimator, x_train, x_test, y_train, y_test,"files/output/metrics.json")
+
+    # Paso 1: Obtener el mejor modelo de GridSearchCV
+    best_model = estimator.best_estimator_
+
+    # Paso 2: Hacer predicciones con el mejor modelo
+    y_train_pred = best_model.predict(x_train)
+    y_test_pred = best_model.predict(x_test)
+    # Imprimir métricas para el conjunto de entrenamiento
+    funtions.print_metrics(y_train, y_train_pred, 'Entrenamiento')
+
+    # Imprimir métricas para el conjunto de prueba
+    funtions.print_confusion_matrix(y_test, y_test_pred, 'Prueba')
+    
+if __name__ == "__main__":
+    main()
